@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server';
 import { PrismaClient } from '@prisma/client';
 import { Hono } from 'hono';
 import { v4 as uuidv4 } from 'uuid';
+import { AuthenticationContext } from '../types/hono';
 
 const blogRoute = new Hono();
 
@@ -47,7 +48,13 @@ blogRoute.post('/', async (c) => {
 
         return c.json({ message: 'Blog Created Successfully' }, 200);
     } catch (err) {
-        return c.json({ errors: err instanceof Error ? err.message : 'Unknown Error', message: 'Server Internal Error' }, 500);
+        return c.json(
+            {
+                errors: err instanceof Error ? err.message : 'Unknown Error',
+                message: 'Server Internal Error',
+            },
+            500
+        );
     } finally {
         await prisma.$disconnect();
     }
@@ -82,7 +89,12 @@ blogRoute.get('/', async (c) => {
             return c.json(response, 200);
         }
     } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
+        return c.json(
+            {
+                error: error instanceof Error ? error.message : 'Server Internal Error',
+            },
+            500
+        );
     } finally {
         await prisma.$disconnect();
     }
@@ -119,7 +131,12 @@ blogRoute.get('/search', async (c) => {
             return c.json(response, 200);
         }
     } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
+        return c.json(
+            {
+                error: error instanceof Error ? error.message : 'Server Internal Error',
+            },
+            500
+        );
     } finally {
         await prisma.$disconnect();
     }
@@ -162,7 +179,12 @@ blogRoute.get('/me', async (c) => {
             return c.json(response, 200);
         }
     } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
+        return c.json(
+            {
+                error: error instanceof Error ? error.message : 'Server Internal Error',
+            },
+            500
+        );
     } finally {
         await prisma.$disconnect();
     }
@@ -193,34 +215,31 @@ blogRoute.get('/:id', async (c) => {
             return c.json(response, 200);
         }
     } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
+        return c.json(
+            {
+                error: error instanceof Error ? error.message : 'Server Internal Error',
+            },
+            500
+        );
     } finally {
         await prisma.$disconnect();
     }
 });
 
-blogRoute.get('/me/:id', async (c) => {
+blogRoute.get('/me/:id', async (c: AuthenticationContext) => {
+    const user = c.get('user');
     const id = c.req.param('id');
 
-    const supabase = await createClient();
     const prisma = new PrismaClient();
 
     try {
-        const { error: authError, data: authData } = await supabase.auth.getUser();
-        if (authError) throw authError;
-
-        if (authData.user) {
+        if (user) {
             const post = await prisma.post.findUnique({
-                where: {
-                    id: id,
-                    userId: authData.user.id,
-                },
+                where: { id: id, userId: user.id },
             });
 
-            const response: GetBlogResponse = {
-                message: 'Get User Post Successfully',
-                blog: post!,
-            };
+            if (!post) return c.json({ message: 'Post Not Found' }, 404);
+            const response: GetBlogResponse = { message: 'Get User Post Successfully', blog: post };
 
             return c.json(response, 200);
         }
@@ -281,14 +300,22 @@ blogRoute.patch('/:id', async (c) => {
                     title: title,
                     description: description,
                     content: content,
-                    ...(fullPath && { imageUrl: `${process.env.SUPABASE_STORAGE_URL}${fullPath}` }),
+                    ...(fullPath && {
+                        imageUrl: `${process.env.SUPABASE_STORAGE_URL}${fullPath}`,
+                    }),
                 },
             });
         }
 
         return c.json({ message: 'Blog Update Successfully' }, 200);
     } catch (err) {
-        return c.json({ errors: err instanceof Error ? err.message : 'Unknown Error', message: 'Server Internal Error' }, 500);
+        return c.json(
+            {
+                errors: err instanceof Error ? err.message : 'Unknown Error',
+                message: 'Server Internal Error',
+            },
+            500
+        );
     } finally {
         await prisma.$disconnect();
     }
@@ -332,7 +359,13 @@ blogRoute.delete('/:id', async (c) => {
         }
     } catch (err) {
         console.log(err);
-        return c.json({ errors: err instanceof Error ? err.message : 'Unknown Error', message: 'Server Internal Error' }, 500);
+        return c.json(
+            {
+                errors: err instanceof Error ? err.message : 'Unknown Error',
+                message: 'Server Internal Error',
+            },
+            500
+        );
     } finally {
         await prisma.$disconnect();
     }
