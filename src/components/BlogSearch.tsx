@@ -22,7 +22,7 @@ export const BlogSearch = () => {
     } = useQuery<GetBlogsSearchResponse>({
         queryKey: ['blogs', 'search', debounceSearchTerm],
         queryFn: async () => {
-            const response = await fetch(`/api/blogs/search?search=${debounceSearchTerm}`, { method: 'GET' });
+            const response = await fetch(`/api/blogs/search?search=${debounceSearchTerm}&limit=6`, { method: 'GET' });
             const result = await response.json();
 
             if (!response.ok) throw new Error(result.error);
@@ -33,7 +33,7 @@ export const BlogSearch = () => {
     });
 
     return (
-        <div className="flex flex-col mb-4 relative">
+        <div className="relative mb-4 flex flex-col">
             <div className="flex">
                 <Input
                     type="text"
@@ -50,15 +50,21 @@ export const BlogSearch = () => {
             </div>
 
             {isLoading && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-2 p-2 rounded bg-primary-foreground">
+                <div className="bg-primary-foreground absolute top-full right-0 left-0 z-50 mt-2 h-[20rem] rounded p-2">
                     <LoadingSpinner />
                 </div>
             )}
-            {isError && <div className="absolute top-full left-0 right-0 z-50 mt-2 p-2 rounded bg-primary-foreground">Something Went Wrong: {error.message}</div>}
-            {res && res.blogs.length === 0 && !isLoading && !isError && <div className="absolute top-full left-0 right-0 z-50 mt-2 p-2 rounded bg-primary-foreground">No Blogs Found</div>}
+            {isError && (
+                <div className="bg-primary-foreground absolute top-full right-0 left-0 z-50 mt-2 rounded p-2">
+                    Something Went Wrong: {error.message}
+                </div>
+            )}
+            {res && res.blogs.length === 0 && !isLoading && !isError && (
+                <div className="bg-primary-foreground absolute top-full right-0 left-0 z-50 mt-2 rounded p-2">No Blogs Found</div>
+            )}
 
             {res && res.blogs && res.blogs.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-2 p-2 rounded bg-primary-foreground">
+                <div className="bg-primary-foreground absolute top-full right-0 left-0 z-50 mt-2 rounded p-2">
                     {res.blogs.map((blog: BlogSchema, index) => (
                         <BlogSearchCardPublic key={index} {...blog} isPriority={true} />
                     ))}

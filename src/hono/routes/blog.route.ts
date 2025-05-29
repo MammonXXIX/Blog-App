@@ -3,11 +3,13 @@ import { createClient } from '@/utils/supabase/server';
 import { PrismaClient } from '@prisma/client';
 import { Hono } from 'hono';
 import { v4 as uuidv4 } from 'uuid';
-import { AuthenticationContext } from '../types/hono';
+import { AuthenticationContext } from '../context/hono';
 
 const blogRoute = new Hono();
 
-blogRoute.post('/', async (c) => {
+blogRoute.post('/', async (c: AuthenticationContext) => {
+    const user = c.get('user');
+
     const supabase = await createClient();
     const prisma = new PrismaClient();
 
@@ -28,11 +30,9 @@ blogRoute.post('/', async (c) => {
         const fileBuffer = await image.arrayBuffer();
 
         const { error: storageError, data: storageData } = await supabase.storage.from('post').upload(filePath, fileBuffer);
-        const { error: authError, data: authData } = await supabase.auth.getUser();
+        if (storageError) throw storageError;
 
-        if (storageError || authError) throw storageError || authError;
-
-        if (storageData.fullPath && authData.user) {
+        if (storageData.fullPath && user) {
             await prisma.post.create({
                 data: {
                     id: uuid,
@@ -41,37 +41,54 @@ blogRoute.post('/', async (c) => {
                     content: content,
                     view: 0,
                     imageUrl: `${process.env.SUPABASE_STORAGE_URL}${storageData.fullPath}`,
-                    userId: authData.user.id,
+                    userId: user.id,
                 },
             });
         }
 
         return c.json({ message: 'Blog Created Successfully' }, 200);
-    } catch (err) {
-        return c.json(
-            {
-                errors: err instanceof Error ? err.message : 'Unknown Error',
-                message: 'Server Internal Error',
-            },
-            500
-        );
+    } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
     } finally {
         await prisma.$disconnect();
     }
 });
 
-blogRoute.get('/', async (c) => {
-    const supabase = await createClient();
+blogRoute.get('/search', async (c: AuthenticationContext) => {
+    const user = c.get('user');
     const prisma = new PrismaClient();
 
     try {
-        const { error: authError, data: authData } = await supabase.auth.getUser();
-        if (authError) throw authError;
+        const searchQuery = c.req.query('search');
+        const limit = Number(c.req.query('limit')) || 4;
 
+        if (user) {
+            const posts = await prisma.post.findMany({
+                where: { title: { contains: searchQuery, mode: 'insensitive' } },
+                take: limit,
+                orderBy: { createdAt: 'desc' },
+            });
+
+            const response: GetBlogsSearchResponse = { message: 'Get All Posts Successfully', blogs: posts };
+
+            return c.json(response, 200);
+        }
+    } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
+    } finally {
+        await prisma.$disconnect();
+    }
+});
+
+blogRoute.get('/', async (c: AuthenticationContext) => {
+    const user = c.get('user');
+    const prisma = new PrismaClient();
+
+    try {
         const cursor = c.req.query('cursor');
-        const limit = 8;
+        const limit = Number(c.req.query('limit')) || 8;
 
-        if (authData.user) {
+        if (user) {
             const posts = await prisma.post.findMany({
                 take: limit + 1,
                 cursor: cursor ? { id: cursor } : undefined,
@@ -89,138 +106,69 @@ blogRoute.get('/', async (c) => {
             return c.json(response, 200);
         }
     } catch (error) {
-        return c.json(
-            {
-                error: error instanceof Error ? error.message : 'Server Internal Error',
-            },
-            500
-        );
+        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
     } finally {
         await prisma.$disconnect();
     }
 });
 
-blogRoute.get('/search', async (c) => {
-    const supabase = await createClient();
+blogRoute.get('/me', async (c: AuthenticationContext) => {
+    const user = c.get('user');
     const prisma = new PrismaClient();
 
     try {
-        const { error: authError, data: authData } = await supabase.auth.getUser();
-        if (authError) throw authError;
-
-        const searchQuery = c.req.query('search');
-        const limit = 4;
-
-        if (authData.user) {
-            const posts = await prisma.post.findMany({
-                where: {
-                    title: {
-                        contains: searchQuery,
-                        mode: 'insensitive',
-                    },
-                },
-                take: limit,
-                orderBy: { createdAt: 'desc' },
-            });
-
-            const response: GetBlogsSearchResponse = {
-                message: 'Get All Posts Successfully',
-                blogs: posts,
-            };
-
-            return c.json(response, 200);
-        }
-    } catch (error) {
-        return c.json(
-            {
-                error: error instanceof Error ? error.message : 'Server Internal Error',
-            },
-            500
-        );
-    } finally {
-        await prisma.$disconnect();
-    }
-});
-
-blogRoute.get('/me', async (c) => {
-    const supabase = await createClient();
-    const prisma = new PrismaClient();
-
-    try {
-        const { error: authError, data: authData } = await supabase.auth.getUser();
-        if (authError) throw authError;
-
         const page = Number(c.req.query('page') ?? 1);
-        const limit = 8;
+        const limit = Number(c.req.query('limit')) || 8;
         const skip = (page - 1) * limit;
 
-        if (authData.user) {
+        if (user) {
             const [posts, total] = await Promise.all([
                 prisma.post.findMany({
-                    where: { userId: authData.user.id },
+                    where: { userId: user.id },
                     skip,
                     take: limit,
                     orderBy: { createdAt: 'desc' },
                 }),
-                prisma.post.count({
-                    where: { userId: authData.user.id },
-                }),
+                prisma.post.count({ where: { userId: user.id } }),
             ]);
+
+            if (!posts) return c.json({ message: 'Post Not Found' }, 404);
 
             const response: GetBlogsPaginationResponse = {
                 message: 'Get User Posts Successfully',
                 blogs: posts,
                 page: page,
                 limit: limit,
-                total: total,
+                totalBlogs: total,
                 totalPages: Math.ceil(total / limit),
             };
 
             return c.json(response, 200);
         }
     } catch (error) {
-        return c.json(
-            {
-                error: error instanceof Error ? error.message : 'Server Internal Error',
-            },
-            500
-        );
+        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
     } finally {
         await prisma.$disconnect();
     }
 });
 
-blogRoute.get('/:id', async (c) => {
+blogRoute.get('/:id', async (c: AuthenticationContext) => {
+    const user = c.get('user');
     const id = c.req.param('id');
 
-    const supabase = await createClient();
     const prisma = new PrismaClient();
 
     try {
-        const { error: authError, data: authData } = await supabase.auth.getUser();
-        if (authError) throw authError;
+        if (user) {
+            const post = await prisma.post.findUnique({ where: { id: id } });
 
-        if (authData.user) {
-            const post = await prisma.post.findUnique({
-                where: {
-                    id: id,
-                },
-            });
-
-            const response: GetBlogResponse = {
-                message: 'Get User Post Successfully',
-                blog: post!,
-            };
+            if (!post) return c.json({ message: 'Post Not Found' }, 404);
+            const response: GetBlogResponse = { message: 'Get User Post Successfully', blog: post };
 
             return c.json(response, 200);
         }
     } catch (error) {
-        return c.json(
-            {
-                error: error instanceof Error ? error.message : 'Server Internal Error',
-            },
-            500
-        );
+        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
     } finally {
         await prisma.$disconnect();
     }
@@ -238,7 +186,7 @@ blogRoute.get('/me/:id', async (c: AuthenticationContext) => {
                 where: { id: id, userId: user.id },
             });
 
-            if (!post) return c.json({ message: 'Post Not Found' }, 404);
+            if (!post) return c.json({ error: 'Post Not Found' }, 404);
             const response: GetBlogResponse = { message: 'Get User Post Successfully', blog: post };
 
             return c.json(response, 200);
@@ -250,7 +198,8 @@ blogRoute.get('/me/:id', async (c: AuthenticationContext) => {
     }
 });
 
-blogRoute.patch('/:id', async (c) => {
+blogRoute.patch('/:id', async (c: AuthenticationContext) => {
+    const user = c.get('user');
     const { id } = c.req.param();
 
     const supabase = await createClient();
@@ -280,64 +229,42 @@ blogRoute.patch('/:id', async (c) => {
                 .remove([oldImage.split('supabase.co/storage/v1/object/public/post/')[1]]);
             if (storageRemoveError) throw storageRemoveError;
 
-            console.log(storageRemoveData);
-
             const { error: storageError, data: storageData } = await supabase.storage.from('post').upload(filePath, fileBuffer);
             if (storageError) throw storageError;
 
             fullPath = storageData.fullPath;
         }
 
-        const { error: authError, data: authData } = await supabase.auth.getUser();
-        if (authError) throw authError;
-
-        if (authData.user) {
+        if (user) {
             await prisma.post.update({
-                where: {
-                    id: id,
-                },
+                where: { id: id },
                 data: {
                     title: title,
                     description: description,
                     content: content,
-                    ...(fullPath && {
-                        imageUrl: `${process.env.SUPABASE_STORAGE_URL}${fullPath}`,
-                    }),
+                    ...(fullPath && { imageUrl: `${process.env.SUPABASE_STORAGE_URL}${fullPath}` }),
                 },
             });
         }
 
         return c.json({ message: 'Blog Update Successfully' }, 200);
-    } catch (err) {
-        return c.json(
-            {
-                errors: err instanceof Error ? err.message : 'Unknown Error',
-                message: 'Server Internal Error',
-            },
-            500
-        );
+    } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
     } finally {
         await prisma.$disconnect();
     }
 });
 
-blogRoute.delete('/:id', async (c) => {
+blogRoute.delete('/:id', async (c: AuthenticationContext) => {
+    const user = c.get('user');
     const { id } = c.req.param();
 
     const supabase = await createClient();
     const prisma = new PrismaClient();
 
     try {
-        const { error: authError, data: authData } = await supabase.auth.getUser();
-        if (authError) throw authError;
-
-        if (authData.user) {
-            const post = await prisma.post.findUnique({
-                where: {
-                    id: id,
-                    userId: authData.user.id,
-                },
-            });
+        if (user) {
+            const post = await prisma.post.findUnique({ where: { id: id, userId: user.id } });
 
             if (post) {
                 const { error: storageRemoveError, data: storageRemoveData } = await supabase.storage
@@ -345,27 +272,13 @@ blogRoute.delete('/:id', async (c) => {
                     .remove([post.imageUrl.split('supabase.co/storage/v1/object/public/post/')[1]]);
                 if (storageRemoveError) throw storageRemoveError;
 
-                console.log(storageRemoveData);
-
-                await prisma.post.delete({
-                    where: {
-                        id: id,
-                        userId: authData.user.id,
-                    },
-                });
+                await prisma.post.delete({ where: { id: id, userId: user.id } });
             }
 
             return c.json({ message: 'Blog Delete Successfully' }, 200);
         }
-    } catch (err) {
-        console.log(err);
-        return c.json(
-            {
-                errors: err instanceof Error ? err.message : 'Unknown Error',
-                message: 'Server Internal Error',
-            },
-            500
-        );
+    } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : 'Server Internal Error' }, 500);
     } finally {
         await prisma.$disconnect();
     }

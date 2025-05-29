@@ -6,7 +6,15 @@ import { LogOut, Settings, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { Button } from './ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { Skeleton } from './ui/skeleton';
 import { Tilecase } from '@/utils/Tilecase';
 
@@ -48,7 +56,7 @@ export const ButtonProfile = () => {
     return (
         <div>
             <DropdownMenu>
-                <DropdownMenuTrigger asChild className="w-full h-[50px] flex justify-start p-2">
+                <DropdownMenuTrigger asChild className="flex h-[50px] w-full justify-start p-2">
                     {!isLoading ? (
                         <Button variant={'ghost'}>
                             <Avatar className="mr-2">
@@ -58,7 +66,7 @@ export const ButtonProfile = () => {
                             {Tilecase(data.user.username)}
                         </Button>
                     ) : (
-                        <Skeleton className="w-full h-[50px]" />
+                        <Skeleton className="h-[50px] w-full" />
                     )}
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56">

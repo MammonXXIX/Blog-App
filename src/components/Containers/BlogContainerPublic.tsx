@@ -20,7 +20,7 @@ const BlogContainerPublic = () => {
     } = useInfiniteQuery<GetBlogsInfiniteResponse>({
         queryKey: ['blogs'],
         queryFn: async ({ pageParam }) => {
-            const response = await fetch(`/api/blogs?${pageParam ? `cursor=${pageParam}` : ''}`, { method: 'GET' });
+            const response = await fetch(`/api/blogs?${pageParam ? `cursor=${pageParam}` : ''}&limit=4`, { method: 'GET' });
             const result = await response.json();
 
             if (!response.ok) throw new Error(result.error);
@@ -39,7 +39,10 @@ const BlogContainerPublic = () => {
             {blogs && blogs.length === 0 && !isPending && !isError && <p>No Blogs Found.</p>}
 
             {blogs && blogs.length > 0 && (
-                <InfiniteScrollContainer onBottomReached={() => hasNextPage && !isFetching && fetchNextPage()} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <InfiniteScrollContainer
+                    onBottomReached={() => hasNextPage && !isFetching && fetchNextPage()}
+                    className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                >
                     {blogs.map((post: BlogSchema, index: number) => {
                         return <BlogCardPublic key={post.id} {...post} isPriority={index < 4} />;
                     })}

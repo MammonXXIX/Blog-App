@@ -11,7 +11,7 @@ export type GetBlogsPaginationResponse = {
     blogs: BlogSchema[];
     page: number;
     limit: number;
-    total: number;
+    totalBlogs: number;
     totalPages: number;
 };
 
